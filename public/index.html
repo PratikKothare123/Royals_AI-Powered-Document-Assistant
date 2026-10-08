@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Knowledge & Document Assistant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AI Knowledge & Document Assistant</h1>
+      <p>Upload a PDF and ask questions from your document.</p>
+    </header>
+
+    <div class="card">
+      <h2>Upload Document</h2>
+      <form id="uploadForm">
+        <div class="form-group">
+          <input type="file" id="pdfFile" accept="application/pdf" required />
+          <button type="submit" id="uploadBtn" class="btn">Upload PDF</button>
+        </div>
+      </form>
+      <div id="uploadStatus" class="message"></div>
+    </div>
+
+    <div class="card">
+      <h2>Uploaded Documents</h2>
+      <ul id="docList" class="doc-list">
+        <li class="empty-msg">No documents uploaded yet.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Ask a Question</h2>
+      <form id="askForm">
+        <textarea id="questionInput" placeholder="Type your question based on the uploaded document..." required></textarea>
+        <button type="submit" id="askBtn" class="btn">Ask AI</button>
+      </form>
+      <div id="askStatus" class="message"></div>
+    </div>
+
+    <div id="resultCard" class="card hidden">
+      <h2>AI Answer</h2>
+      <div id="answerBox" class="answer-box"></div>
+      
+      <div class="sources-box">
+        <h3>Sources</h3>
+        <div id="sourcesList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const uploadForm = document.getElementById('uploadForm');
+    const pdfFileInput = document.getElementById('pdfFile');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadStatus = document.getElementById('uploadStatus');
+    const docList = document.getElementById('docList');
+
+    const askForm = document.getElementById('askForm');
+    const questionInput = document.getElementById('questionInput');
+    const askBtn = document.getElementById('askBtn');
+    const askStatus = document.getElementById('askStatus');
+
+    const resultCard = document.getElementById('resultCard');
+    const answerBox = document.getElementById('answerBox');
+    const sourcesList = document.getElementById('sourcesList');
+
+    const uploadedDocs = new Set();
+
+    function showStatus(element, text, isError = false) {
+      element.textContent = text;
+      element.className = isError ? 'message error' : 'message success';
+    }
+
+    function clearStatus(element) {
+      element.textContent = '';
+      element.className = 'message';
+    }
+
+    function updateDocList(documentName) {
+      uploadedDocs.add(documentName);
+      docList.innerHTML = '';
+      uploadedDocs.forEach(name => {
+        const li = document.createElement('li');
+        li.textContent = name;
+        docList.appendChild(li);
+      });
+    }
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearStatus(uploadStatus);
+
+      const file = pdfFileInput.files[0];
+      if (!file) {
+        showStatus(uploadStatus, 'Please upload a PDF file.', true);
+        return;
+      }
+
+      if (file.type !== 'application/pdf') {
+        showStatus(uploadStatus, 'Only PDF files are allowed.', true);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('document', file);
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'Uploading...';
+
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to upload document.');
+        }
+
+        showStatus(uploadStatus, `Success: ${data.message} (${data.chunksCreated} chunks stored)`);
+        updateDocList(data.documentName);
+        pdfFileInput.value = '';
+      } catch (err) {
+        showStatus(uploadStatus, err.message || 'Something went wrong. Please try again.', true);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'Upload PDF';
+      }
+    });
+
+    askForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearStatus(askStatus);
+
+      const question = questionInput.value.trim();
+      if (!question) {
+        showStatus(askStatus, 'Please enter a question.', true);
+        return;
+      }
+
+      askBtn.disabled = true;
+      askBtn.textContent = 'Thinking...';
+      resultCard.classList.add('hidden');
+
+      try {
+        const response = await fetch('/api/ask', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ question })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to get answer.');
+        }
+
+        answerBox.textContent = data.answer;
+
+        sourcesList.innerHTML = '';
+        if (data.sources && data.sources.length > 0) {
+          data.sources.forEach(src => {
+            const span = document.createElement('span');
+            span.className = 'source-item';
+            span.textContent = `Document: ${src.document} | Page: ${src.page}`;
+            sourcesList.appendChild(span);
+          });
+        } else {
+          sourcesList.textContent = 'No specific source pages found.';
+        }
+
+        resultCard.classList.remove('hidden');
+      } catch (err) {
+        showStatus(askStatus, err.message || 'Something went wrong. Please try again.', true);
+      } finally {
+        askBtn.disabled = false;
+        askBtn.textContent = 'Ask AI';
+      }
+    });
+  </script>
+</body>
+</html>
